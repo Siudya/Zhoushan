@@ -83,7 +83,7 @@ class MicroOp extends Bundle with ZhoushanConfig{
     val imm_shamt = Mux(w_type, Cat(Fill(27, 0.U), inst(24, 20)), Cat(Fill(26, 0.U), inst(25, 20)))
     val imm_csr = Cat(Fill(27, 0.U), inst(19, 15))
 
-    imm := MuxLookup(imm_type, 0.U(32.W), Array(
+    imm := MuxLookup(imm_type, 0.U(32.W))(Seq(
       s"b$IMM_I".U     -> imm_i,
       s"b$IMM_S".U     -> imm_s,
       s"b$IMM_B".U     -> imm_b,

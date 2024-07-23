@@ -32,7 +32,7 @@ class ReturnAddressStack extends Module with BpParameters with ZhoushanConfig {
   })
 
   def getAddr(x: UInt): UInt = x(RasPtrSize - 1, 0)
-  def getFlag(x: UInt): Bool = x(RasPtrSize).asBool()
+  def getFlag(x: UInt): Bool = x(RasPtrSize).asBool
 
   // we chooose ReadFirst to support "pop, then push" (rv unprivileged spec page 22)
   val ras = SyncReadMem(RasSize, UInt(32.W), SyncReadMem.ReadFirst)

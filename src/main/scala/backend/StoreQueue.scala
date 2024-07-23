@@ -41,6 +41,7 @@ class StoreQueue extends Module with ZhoushanConfig {
     val out_ld = new CacheBusIO   // id = ZhoushanConfig.SqLoadId
     // deq request from ROB
     val deq_req = Input(Bool())
+    val sqEmpty = Output(Bool())
   })
 
   val sq = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new StoreQueueEntry))))
@@ -49,8 +50,7 @@ class StoreQueue extends Module with ZhoushanConfig {
   val maybe_full = RegInit(false.B)
   val empty = (enq_ptr.value === deq_ptr.value) && !maybe_full
   val full = (enq_ptr.value === deq_ptr.value) && maybe_full
-
-  BoringUtils.addSource(empty, "sq_empty")
+  io.sqEmpty := empty
 
   /* ---------- State Machine -------- */
 
@@ -98,7 +98,7 @@ class StoreQueue extends Module with ZhoushanConfig {
       }
     }
     is (deq_wait) {
-      when (io.out_st.resp.fire()) {
+      when (io.out_st.resp.fire) {
         deq_state := deq_idle
       }
     }
@@ -133,7 +133,7 @@ class StoreQueue extends Module with ZhoushanConfig {
       }
     }
     is (enq_wait) {
-      when (io.in_st.resp.fire()) {
+      when (io.in_st.resp.fire) {
         enq_state := enq_idle
       }
     }
@@ -226,14 +226,4 @@ class StoreQueue extends Module with ZhoushanConfig {
   io.out_ld.req.bits.id    := SqLoadId.U
 
   io.out_ld.resp.ready     := io.in_ld.resp.ready
-
-  /* ---------- debug ---------------- */
-
-  if (EnableDifftest && EnableQueueAnalyzer) {
-    val ptr_match = enq_ptr.value === deq_ptr.value
-    val ptr_diff = enq_ptr.value - deq_ptr.value
-    val queue_sq_count = Mux(maybe_full && ptr_match, entries.U, 0.U) | ptr_diff
-    BoringUtils.addSource(queue_sq_count, "profile_queue_sq_count")
-  }
-
 }

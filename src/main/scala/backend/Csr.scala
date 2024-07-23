@@ -20,6 +20,7 @@ import chisel3.util._
 import chisel3.util.experimental._
 import difftest._
 import zhoushan.Constant._
+import zhoushan.MaskedRegMap.Unwritable
 
 object Csrs {
   val mhartid  = "hf14".U
@@ -34,11 +35,27 @@ object Csrs {
   val minstret = "hb02".U
 }
 
+class IntrBundle extends Bundle {
+  val mstatus = UInt(64.W)
+  val mepc    = UInt(64.W)
+  val mcause  = UInt(64.W)
+}
+
+class RobCsrIo extends Bundle {
+  val mcycle    = Input(UInt(64.W))
+  val minstret  = Input(UInt(64.W))
+  val intr      = Input(Valid(new IntrBundle))
+  val mstatus   = Output(UInt(64.W))
+  val mtie       = Output(Bool())
+  val mtvecIdx     = Output(UInt(30.W))
+}
+
 class Csr extends Module {
   val io = IO(new Bundle {
     val uop = Input(new MicroOp())
     val in1 = Input(UInt(64.W))
     val ecp = Output(new ExCommitPacket)
+    val rob = new RobCsrIo
   })
 
   val uop = io.uop
@@ -61,27 +78,16 @@ class Csr extends Module {
   val mepc      = RegInit(UInt(64.W), 0.U)
   val mcause    = RegInit(UInt(64.W), 0.U)
 
-  BoringUtils.addSource(mstatus, "csr_mstatus")
-  BoringUtils.addSource(mie(7).asBool(), "csr_mie_mtie")
-  BoringUtils.addSource(mtvec(31, 2), "csr_mtvec_idx")
-
-  // interrupt for mip
-  val mtip      = WireInit(UInt(1.W), 0.U)
-  BoringUtils.addSink(mtip, "csr_mip_mtip")
-  BoringUtils.addSource(mtip, "csr_mip_mtip_intr")
-
-  val mcycle    = WireInit(UInt(64.W), 0.U)
-  val minstret  = WireInit(UInt(64.W), 0.U)
-
-  BoringUtils.addSink(mcycle, "csr_mcycle")
-  BoringUtils.addSink(minstret, "csr_minstret")
+  io.rob.mstatus := mstatus
+  io.rob.mtie := mie(7)
+  io.rob.mtvecIdx := mtvec(31, 2)
 
   // CSR write function with side effect
 
   def mstatusWriteFunction(mstatus: UInt): UInt = {
     def get_mstatus_xs(mstatus: UInt): UInt = mstatus(16, 15)
     def get_mstatus_fs(mstatus: UInt): UInt = mstatus(14, 13)
-    val mstatus_sd = ((get_mstatus_xs(mstatus) === "b11".U) || (get_mstatus_fs(mstatus) === "b11".U)).asUInt()
+    val mstatus_sd = ((get_mstatus_xs(mstatus) === "b11".U) || (get_mstatus_fs(mstatus) === "b11".U)).asUInt
     val mstatus_new = Cat(mstatus_sd, mstatus(62, 0))
     mstatus_new
   }
@@ -102,21 +108,10 @@ class Csr extends Module {
     csr_jmp_pc := mepc(31, 0)
   }
 
-  // interrupt
-  val intr         = WireInit(Bool(), false.B)
-  val intr_mstatus = WireInit(UInt(64.W), "h00001800".U)
-  val intr_mepc    = WireInit(UInt(64.W), 0.U)
-  val intr_mcause  = WireInit(UInt(64.W), 0.U)
-
-  BoringUtils.addSink(intr, "intr")
-  BoringUtils.addSink(intr_mstatus, "intr_mstatus")
-  BoringUtils.addSink(intr_mepc, "intr_mepc")
-  BoringUtils.addSink(intr_mcause, "intr_mcause")
-
-  when (intr) {
-    mstatus := intr_mstatus
-    mepc := intr_mepc
-    mcause := intr_mcause
+  when (io.rob.intr.valid) {
+    mstatus := io.rob.intr.bits.mstatus
+    mepc := io.rob.intr.bits.mepc
+    mcause := io.rob.intr.bits.mcause
   }
 
   // CSR register map
@@ -130,8 +125,8 @@ class Csr extends Module {
     MaskedRegMap(Csrs.mepc    , mepc    ),
     MaskedRegMap(Csrs.mcause  , mcause  ),
     // skip mip
-    MaskedRegMap(Csrs.mcycle  , mcycle  ),
-    MaskedRegMap(Csrs.minstret, minstret)
+    MaskedRegMap(Csrs.mcycle  , io.rob.mcycle, wfn = Unwritable),
+    MaskedRegMap(Csrs.minstret, io.rob.minstret, wfn = Unwritable)
   )
 
   // CSR register read/write
@@ -141,7 +136,7 @@ class Csr extends Module {
   val wdata = Wire(UInt(64.W))
   val wen = csr_rw
 
-  wdata := MuxLookup(uop.sys_code, 0.U, Array(
+  wdata := MuxLookup(uop.sys_code, 0.U)(Seq(
     s"b$SYS_CSRRW".U -> in1,
     s"b$SYS_CSRRS".U -> (rdata | in1),
     s"b$SYS_CSRRC".U -> (rdata & ~in1)

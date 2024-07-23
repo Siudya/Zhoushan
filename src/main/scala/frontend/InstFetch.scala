@@ -30,10 +30,10 @@ class InstFetch extends Module with ZhoushanConfig {
   val resp = io.imem.resp
 
   val empty = RegInit(false.B)                    // whether IF pipeline is empty
-  when (resp.fire()) {
+  when (resp.fire) {
     empty := true.B
   }
-  when (req.fire()) {
+  when (req.fire) {
     empty := false.B
   }
 
@@ -41,17 +41,17 @@ class InstFetch extends Module with ZhoushanConfig {
   val mis_pc = Mux(io.jmp_packet.jmp, io.jmp_packet.jmp_pc, io.jmp_packet.inst_pc + 4.U)
 
   val reg_mis = RegInit(false.B)                  // store branch mis-predict status
-  when (mis && (!empty || req.fire())) {
+  when (mis && (!empty || req.fire)) {
     reg_mis := true.B
-  } .elsewhen (resp.fire() && !mis) {
+  } .elsewhen (resp.fire && !mis) {
     reg_mis := false.B
-  } .elsewhen (RegNext(resp.fire() && !req.fire() && mis)) {
+  } .elsewhen (RegNext(resp.fire && !req.fire && mis)) {
     reg_mis := false.B
   }
 
   // branch predictor
   val bp = Module(new BranchPredictor)
-  val bp_update = req.fire()
+  val bp_update = req.fire
 
   // program counter
   val pc_init = ResetPc.U(32.W)
@@ -64,7 +64,7 @@ class InstFetch extends Module with ZhoushanConfig {
 
   // next pc predicted
   val npc_p = HoldUnless(bp.io.pred_bpc, RegNext(bp_update))
-  val pred_br = HoldUnlessWithFlush(Cat(bp.io.pred_br.reverse) & Fill(2, bp.io.pred_valid && !mis).asUInt(), RegNext(bp_update), mis)
+  val pred_br = HoldUnlessWithFlush(Cat(bp.io.pred_br.reverse) & Fill(2, bp.io.pred_valid && !mis).asUInt, RegNext(bp_update), mis)
 
   // update pc by npc
   // priority: redirection > branch prediction = sequential pc
@@ -85,7 +85,7 @@ class InstFetch extends Module with ZhoushanConfig {
   bp.io.pc_en := bp_update
   bp.io.pc := npc
 
-  val pc_update = mis || req.fire()
+  val pc_update = mis || req.fire
 
   when (pc_update) {
     pc := npc
@@ -112,13 +112,13 @@ class InstFetch extends Module with ZhoushanConfig {
   out_vec(1).inst     := resp.bits.rdata(63, 32)
   out_vec(1).pred_br  := resp.bits.user(67)
   out_vec(1).pred_bpc := Mux(out_vec(1).pred_br, resp.bits.user(63, 32), 0.U)
-  out_vec(1).valid    := !out_vec(0).pred_br && resp.bits.user(65).asBool()
+  out_vec(1).valid    := !out_vec(0).pred_br && resp.bits.user(65).asBool
 
   out_vec(0).pc       := resp.bits.user(31, 0)
   out_vec(0).inst     := resp.bits.rdata(31, 0)
   out_vec(0).pred_br  := resp.bits.user(66) && out_vec(0).valid
   out_vec(0).pred_bpc := Mux(out_vec(0).pred_br, resp.bits.user(63, 32), 0.U)
-  out_vec(0).valid    := resp.bits.user(64).asBool()
+  out_vec(0).valid    := resp.bits.user(64).asBool
 
   io.out.valid        := resp.valid && !mis && !reg_mis && RegNext(!mis)
 

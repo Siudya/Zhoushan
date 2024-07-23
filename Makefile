@@ -1,22 +1,23 @@
-BUILD_DIR = ./build
-ZHOUSHAN_HOME = $(shell pwd)
+default: verilog
 
-default: sim-verilog
+verilog:
+	@sed -i -E 's/Chisel\./chisel3\./g' difftest/src/main/scala/Difftest.scala
+	@mkdir -p build/rtl
+	mill -i Zhoushan.runMain zhoushan.TopMain -td build/rtl --target systemverilog --split-verilog --full-stacktrace
+	@mkdir -p build/macro
+	@mv build/rtl/sram_array_*.sv build/macro/
+	@mv build/rtl/ClockGate.sv build/macro/
 
-sim-verilog:
-	mkdir -p $(BUILD_DIR)
-	mill -i Zhoushan.runMain zhoushan.TopMain -td $(BUILD_DIR)
+idea:
+	mill -i mill.idea.GenIdea/idea
 
-emu: sim-verilog
-	/bin/bash ./test.sh -l
-	mv ./build/SimTopNew.v ./build/SimTop.v
-	cd $(ZHOUSHAN_HOME)/difftest && $(MAKE) WITH_DRAMSIM3=1 EMU_TRACE=1 emu -j
+init:
+	git submodule update --init
+	cd rocket-chip && git submodule update --init cde hardfloat
 
-emu-direct:
-	cd $(ZHOUSHAN_HOME)/difftest && $(MAKE) WITH_DRAMSIM3=1 EMU_TRACE=1 emu -j
-
-soc: sim-verilog
-	/bin/bash ./test.sh -s
+comp:
+	@sed -i -E 's/Chisel\./chisel3\./g' difftest/src/main/scala/Difftest.scala
+	mill -i Zhoushan.compile
 
 help:
 	mill -i Zhoushan.runMain zhoushan.TopMain --help
@@ -24,4 +25,4 @@ help:
 clean:
 	-rm -rf $(BUILD_DIR)
 
-.PHONY: clean
+.PHONY: clean comp verilog

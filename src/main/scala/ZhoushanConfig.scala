@@ -39,7 +39,7 @@ trait ZhoushanConfig {
   val PrfSize = 64
   val StoreQueueSize = 4
   // Settings
-  val TargetOscpuSoc = false
+  val TargetOscpuSoc = true
   val EnableDifftest = !TargetOscpuSoc
   val EnableMisRateCounter = false
   val EnableQueueAnalyzer = false

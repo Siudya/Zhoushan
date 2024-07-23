@@ -40,7 +40,7 @@ class IssueUnit extends Module with ZhoushanConfig {
   int_iq.io.flush := io.flush
   int_iq.io.rob_addr := io.rob_addr
   for (i <- 0 until PrfSize) {
-    int_iq.io.avail_list(i) := io.avail_list(i).asBool()
+    int_iq.io.avail_list(i) := io.avail_list(i).asBool
   }
   int_iq.io.fu_ready := true.B
 
@@ -48,7 +48,7 @@ class IssueUnit extends Module with ZhoushanConfig {
   mem_iq.io.flush := io.flush
   mem_iq.io.rob_addr := io.rob_addr
   for (i <- 0 until PrfSize) {
-    mem_iq.io.avail_list(i) := io.avail_list(i).asBool()
+    mem_iq.io.avail_list(i) := io.avail_list(i).asBool
   }
   mem_iq.io.fu_ready := io.lsu_ready
 
@@ -111,7 +111,7 @@ abstract class AbstractIssueQueueOutOfOrder(entries: Int, enq_width: Int, deq_wi
 
   val buf = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new MicroOp))))
 
-  val num_enq = Mux(io.in.fire(), PopCount(io.in.bits.vec.map(_.valid)), 0.U)
+  val num_enq = Mux(io.in.fire, PopCount(io.in.bits.vec.map(_.valid)), 0.U)
   val num_deq = PopCount(io.out.map(_.valid))
 
   val enq_vec = RegInit(VecInit((0 until enq_width).map(_.U(addr_width.W))))
@@ -209,14 +209,14 @@ class IntIssueQueueOutOfOrder(entries: Int, enq_width: Int, deq_width: Int)
     enq := io.in.bits.vec(i)
     enq.rob_addr := io.rob_addr(i)
 
-    when (enq.valid && io.in.fire() && !io.flush) {
+    when (enq.valid && io.in.fire && !io.flush) {
       buf(getIdx(enq_vec_real(enq_offset(i)))) := enq
     }
   }
 
   val next_enq_vec = VecInit(enq_vec.map(_ + num_enq - num_deq))
 
-  when ((io.in.fire() || Cat(io.out.map(_.valid)).orR) && !io.flush) {
+  when ((io.in.fire || Cat(io.out.map(_.valid)).orR) && !io.flush) {
     enq_vec := next_enq_vec
   }
 
@@ -240,13 +240,6 @@ class IntIssueQueueOutOfOrder(entries: Int, enq_width: Int, deq_width: Int)
       }
       printf("\n")
     }
-  }
-
-  /* ---------- debug ---------- */
-
-  if (EnableDifftest && EnableQueueAnalyzer) {
-    val queue_iq_int_count = enq_ptr
-    BoringUtils.addSource(queue_iq_int_count, "profile_queue_iq_int_count")
   }
 }
 
@@ -327,14 +320,14 @@ class MemIssueQueueOutOfOrder(entries: Int, enq_width: Int, deq_width: Int)
     enq := io.in.bits.vec(i)
     enq.rob_addr := io.rob_addr(i)
 
-    when (enq.valid && io.in.fire() && !io.flush) {
+    when (enq.valid && io.in.fire && !io.flush) {
       buf(getIdx(enq_vec_real(enq_offset(i)))) := enq
     }
   }
 
   val next_enq_vec = VecInit(enq_vec.map(_ + num_enq - num_deq))
 
-  when ((io.in.fire() || Cat(io.out.map(_.valid)).orR) && !io.flush) {
+  when ((io.in.fire || Cat(io.out.map(_.valid)).orR) && !io.flush) {
     enq_vec := next_enq_vec
   }
 
@@ -359,20 +352,13 @@ class MemIssueQueueOutOfOrder(entries: Int, enq_width: Int, deq_width: Int)
       printf("\n")
     }
   }
-
-  /* ---------- debug ---------- */
-
-  if (EnableDifftest && EnableQueueAnalyzer) {
-    val queue_iq_mem_count = enq_ptr
-    BoringUtils.addSource(queue_iq_mem_count, "profile_queue_iq_mem_count")
-  }
 }
 
 class IssueQueueInOrder(entries: Int, enq_width: Int, deq_width: Int) extends AbstractIssueQueue(entries, enq_width, deq_width) {
   val idx_width = log2Up(entries)
   val addr_width = idx_width + 1  // MSB is flag bit
   def getIdx(x: UInt): UInt = x(idx_width - 1, 0)
-  def getFlag(x: UInt): Bool = x(addr_width - 1).asBool()
+  def getFlag(x: UInt): Bool = x(addr_width - 1).asBool
 
   val buf = SyncReadMem(entries, new MicroOp, SyncReadMem.WriteFirst)
 
@@ -386,7 +372,7 @@ class IssueQueueInOrder(entries: Int, enq_width: Int, deq_width: Int) extends Ab
   val count = Mux(enq_flag === deq_flag, enq_ptr - deq_ptr, entries.U + enq_ptr - deq_ptr)
   val enq_ready = RegInit(true.B)
 
-  val num_enq = Mux(io.in.fire(), PopCount(io.in.bits.vec.map(_.valid)), 0.U)
+  val num_enq = Mux(io.in.fire, PopCount(io.in.bits.vec.map(_.valid)), 0.U)
   val num_deq = PopCount(io.out.map(_.valid))
 
   // even though deq_width = IssueWidth, we may deq only 1 instruction each time
@@ -413,14 +399,14 @@ class IssueQueueInOrder(entries: Int, enq_width: Int, deq_width: Int) extends Ab
     enq := io.in.bits.vec(i)
     enq.rob_addr := io.rob_addr(i)
 
-    when (enq.valid && io.in.fire() && !io.flush) {
+    when (enq.valid && io.in.fire && !io.flush) {
       buf.write(getIdx(enq_vec(offset(i))), enq)
     }
   }
 
   val next_enq_vec = VecInit(enq_vec.map(_ + num_enq))
 
-  when (io.in.fire() && !io.flush) {
+  when (io.in.fire && !io.flush) {
     enq_vec := next_enq_vec
   }
 

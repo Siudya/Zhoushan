@@ -58,7 +58,7 @@ class InstBuffer extends Module with ZhoushanConfig {
   val idx_width = log2Up(entries)
   val addr_width = idx_width + 1  // MSB is flag bit
   def getIdx(x: UInt): UInt = x(idx_width - 1, 0)
-  def getFlag(x: UInt): Bool = x(addr_width - 1).asBool()
+  def getFlag(x: UInt): Bool = x(addr_width - 1).asBool
 
   val buf = SyncReadMem(entries, new InstPacket, SyncReadMem.WriteFirst)
 
@@ -72,8 +72,8 @@ class InstBuffer extends Module with ZhoushanConfig {
   val count = Mux(enq_flag === deq_flag, enq_ptr - deq_ptr, entries.U + enq_ptr - deq_ptr)
   val enq_ready = RegInit(true.B)
 
-  val num_enq = Mux(io.in.fire(), PopCount(io.in.bits.vec.map(_.valid)), 0.U)
-  val num_deq = Mux(io.out.fire(), PopCount(io.out.bits.vec.map(_.valid)), 0.U)
+  val num_enq = Mux(io.in.fire, PopCount(io.in.bits.vec.map(_.valid)), 0.U)
+  val num_deq = Mux(io.out.fire, PopCount(io.out.bits.vec.map(_.valid)), 0.U)
 
   val num_try_deq = Mux(count >= deq_width.U, deq_width.U, count)
   val num_after_enq = count +& num_enq
@@ -97,7 +97,7 @@ class InstBuffer extends Module with ZhoushanConfig {
     val enq = Wire(new InstPacket)
     enq := io.in.bits.vec(i)
 
-    when (io.in.bits.vec(i).valid && io.in.fire() && !io.flush) {
+    when (io.in.bits.vec(i).valid && io.in.fire && !io.flush) {
       val enq_addr = Wire(UInt(idx_width.W))
       enq_addr := getIdx(enq_vec(offset(i)))
       buf.write(enq_addr, enq)
@@ -106,7 +106,7 @@ class InstBuffer extends Module with ZhoushanConfig {
 
   val next_enq_vec = VecInit(enq_vec.map(_ + num_enq))
 
-  when (io.in.fire() && !io.flush) {
+  when (io.in.fire && !io.flush) {
     enq_vec := next_enq_vec
   }
 
@@ -136,17 +136,10 @@ class InstBuffer extends Module with ZhoushanConfig {
 
   // reset
 
-  when (reset.asBool()) {
+  when (reset.asBool) {
     for (i <- 0 until entries) {
       buf.write(i.U, 0.U.asTypeOf(new InstPacket))
     }
-  }
-
-  // debug
-
-  if (EnableDifftest && EnableQueueAnalyzer) {
-    val queue_ib_count = count
-    BoringUtils.addSource(queue_ib_count, "profile_queue_ib_count")
   }
 
   if (DebugInstBuffer) {

@@ -17,7 +17,7 @@ package zhoushan
 
 import chisel3._
 import chisel3.util._
-import chisel3.util.experimental._
+import xs.utils.sram.SRAMTemplate
 
 /* Cache configuration
  * 1xxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
@@ -80,7 +80,7 @@ class Meta extends Module {
   }
 
   // sync reset
-  when (reset.asBool()) {
+  when (reset.asBool) {
     for (i <- 0 until 64) {
       tags.write(i.U, 0.U)
     }
@@ -93,6 +93,9 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
   val io = IO(new Bundle {
     val in = Flipped(bus_type)
     val out = new CoreBusIO
+    val fenceI = Input(Bool())
+    val sqEmpty = Input(Bool())
+    val dcacheFi = if(id == InstCacheId) Input(Bool()) else Output(Bool())
   })
 
   val in = io.in
@@ -101,7 +104,7 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
   // 4 interleaving sram, each of which corresponds to a single cacheline of
   // the 4-way associative cache
   val sram = for (i <- 0 until 4) yield {
-    val sram = Module(new Sram(id * 10 + i))
+    val sram = Module(new SRAMTemplate(gen = UInt(SramDataWidth.W), set = SramDepth, way = 1, singlePort = true, hasMbist = true))
     sram
   }
 
@@ -118,11 +121,12 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
   val dirty_out = WireInit(VecInit(Seq.fill(4)(false.B)))
 
   // set default input
-  sram.map { case s => {
-    s.io.en := false.B
-    s.io.wen := false.B
-    s.io.addr := 0.U
-    s.io.wdata := 0.U
+  sram.foreach { s => {
+    s.io.r.req.valid := false.B
+    s.io.r.req.bits.setIdx := 0.U
+    s.io.w.req.valid := false.B
+    s.io.w.req.bits.setIdx := 0.U
+    s.io.w.req.bits.data.head := 0.U
   }}
   meta.map { case m => {
     m.io.idx := 0.U
@@ -133,7 +137,7 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
     m.io.invalidate := false.B
   }}
 
-  (sram_out  zip sram).map { case (o, s) => { o := s.io.rdata }}
+  (sram_out  zip sram).map { case (o, s) => { o := s.io.r.resp.data.head }}
   (tag_out   zip meta).map { case (t, m) => { t := m.io.tag_r }}
   (valid_out zip meta).map { case (v, m) => { v := RegNext(m.io.valid_r_async) }}
   (dirty_out zip meta).map { case (d, m) => { d := RegNext(m.io.dirty_r_async) }}
@@ -167,15 +171,9 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
 
   /* ----- Fence Ctrl Signals -------- */
 
-  val fence_i = WireInit(false.B)
-  BoringUtils.addSink(fence_i, "fence_i")
-
-  val sq_empty = WireInit(false.B)
-  BoringUtils.addSink(sq_empty, "sq_empty")
-
   val fi_finish = WireInit(false.B)
-  val fi_valid = BoolStopWatch(fence_i, fi_finish)
-  val fi_ready = pipeline_ready && sq_empty
+  val fi_valid = BoolStopWatch(io.fenceI, fi_finish)
+  val fi_ready = pipeline_ready && io.sqEmpty
   val fi_fire = fi_valid && fi_ready
 
   /* ----- Cache Stage 1 ------------- */
@@ -200,9 +198,9 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
   // the data will be returned at the next clock cycle, and passed to stage 2
 
   when (pipeline_fire) {
-    sram.map { case s => {
-      s.io.en := true.B
-      s.io.addr := s1_idx
+    sram.foreach {s => {
+      s.io.r.req.valid := true.B
+      s.io.r.req.bits.setIdx := s1_idx
     }}
     meta.map { case m => {
       m.io.idx := s1_idx
@@ -311,19 +309,19 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
   /* ----- Debug Info ---------------- */
 
   if ((DebugICache && id == 1) || (DebugDCache && id == 2)) {
-    when (in.req.fire()) {
+    when (in.req.fire) {
       printf("%d: [$ %d] [IN -REQ ] addr=%x wen=%x wdata=%x\n", DebugTimer(), id.U, in.req.bits.addr, in.req.bits.wen, in.req.bits.wdata)
     }
-    when (in.resp.fire()) {
+    when (in.resp.fire) {
       printf("%d: [$ %d] [IN -RESP] addr=%x wen=%x rdata=%x\n", DebugTimer(), id.U, s2_addr, s2_wen, in.resp.bits.rdata)
     }
     when (RegNext(pipeline_fire)) {
       printf("%d: [$ %d] hit=%x idx=%d way=%d rdata=%x dirty=%x replace_way=%d tag_r=%x dat_w=%x\n", DebugTimer(), id.U, s2_hit, s2_idx, s2_way, s2_rdata, s2_dirty, replace_way, s2_tag_r, s2_dat_w)
     }
-    when (out.req.fire()) {
+    when (out.req.fire) {
       printf("%d: [$ %d] [OUT-REQ ] addr=%x aen=%x wen=%x wdata=%x\n", DebugTimer(), id.U, out.req.bits.addr, out.req.bits.aen, out.req.bits.wen, out.req.bits.wdata)
     }
-    when (out.resp.fire()) {
+    when (out.resp.fire) {
       printf("%d: [$ %d] [OUT-RESP] rdata=%x\n", DebugTimer(), id.U, out.resp.bits.rdata)
     }
   }
@@ -344,10 +342,9 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
         when (s2_hit && s2_wen) {
           for (i <- 0 until 4) {
             when (s2_way === i.U) {
-              sram(i).io.en := true.B
-              sram(i).io.wen := true.B
-              sram(i).io.addr := s2_idx
-              sram(i).io.wdata := Mux(s2_offs === 1.U,
+              sram(i).io.w.req.valid := true.B
+              sram(i).io.w.req.bits.setIdx := s2_idx
+              sram(i).io.w.req.bits.data.head := Mux(s2_offs === 1.U,
                                       Cat(MaskData(s2_rdata(127, 64), s2_wdata, MaskExpand(s2_wmask)), s2_rdata(63, 0)),
                                       Cat(s2_rdata(127, 64), MaskData(s2_rdata(63, 0), s2_wdata, MaskExpand(s2_wmask))))
               meta(i).io.idx := s2_idx
@@ -362,12 +359,12 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
       }
     }
     is (s_miss_req_r) {
-      when (out.req.fire()) {
+      when (out.req.fire) {
         state := s_miss_wait_r
       }
     }
     is (s_miss_wait_r) {
-      when (out.resp.fire()) {
+      when (out.resp.fire) {
         when (!out.resp.bits.rlast) {
           wdata1 := out.resp.bits.rdata
         } .otherwise {
@@ -379,15 +376,14 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
     is (s_miss_ok_r) {
       for (i <- 0 until 4) {
         when (replace_way === i.U) {
-          sram(i).io.en := true.B
-          sram(i).io.wen := true.B
-          sram(i).io.addr := s2_idx
+          sram(i).io.w.req.valid := true.B
+          sram(i).io.w.req.bits.setIdx := s2_idx
           when (s2_wen) {
-            sram(i).io.wdata := Mux(s2_offs === 1.U,
+            sram(i).io.w.req.bits.data.head := Mux(s2_offs === 1.U,
                                     Cat(MaskData(wdata2, s2_wdata, MaskExpand(s2_wmask)), wdata1),
                                     Cat(wdata2, MaskData(wdata1, s2_wdata, MaskExpand(s2_wmask))))
           } .otherwise {
-            sram(i).io.wdata := Cat(wdata2, wdata1)
+            sram(i).io.w.req.bits.data.head := Cat(wdata2, wdata1)
           }
           // write allocate
           meta(i).io.idx := s2_idx
@@ -405,25 +401,25 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
       }
     }
     is (s_miss_req_w1) {
-      when (out.req.fire()) {
+      when (out.req.fire) {
         state := s_miss_req_w2
       }
     }
     is (s_miss_req_w2) {
-      when (out.req.fire()) {
+      when (out.req.fire) {
         state := s_miss_wait_w
       }
     }
     is (s_miss_wait_w) {
       s2_wen := false.B
-      when (out.resp.fire()) {
+      when (out.resp.fire) {
         updatePlruTree(s2_idx, replace_way)
         state := s_complete
       }
     }
     is (s_complete) {
-      in.resp.bits.rdata := RegNext(Mux(s2_offs.asBool(), wdata2, wdata1))
-      when (in.resp.fire()) {
+      in.resp.bits.rdata := RegNext(Mux(s2_offs.asBool, wdata2, wdata1))
+      when (in.resp.fire) {
         state := s_invalid
       }
     }
@@ -465,12 +461,9 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
 
   if (id == InstCacheId) {
     // I$ is ready to accept req only when D$ completes Fence.I
-    val dcache_fi_complete = WireInit(false.B)
-    BoringUtils.addSink(dcache_fi_complete, "dcache_fi_complete")
-
     // I$ may complete Fence.I request much faster than D$
     // Thus, whether I$ is ready depends on D$ status
-    fi_finish := dcache_fi_complete
+    fi_finish := io.dcacheFi
 
     when (fi_fire) {
       for (i <- 0 until 4) {
@@ -478,17 +471,15 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
       }
     }
   } else if (id == DataCacheId) {
-    val dcache_fi_complete = WireInit(false.B)
-    BoringUtils.addSource(dcache_fi_complete, "dcache_fi_complete")
-
-    fi_finish := dcache_fi_complete
+    io.dcacheFi := false.B
+    fi_finish := io.dcacheFi
 
     val fi_counter_next = fi_counter + 1.U
 
     when (fi_state === fi_dirty_check) {
-      sram.map { case s => {
-        s.io.en := true.B
-        s.io.addr := fi_line_idx
+      sram.foreach {s => {
+        s.io.r.req.valid := true.B
+        s.io.r.req.bits.setIdx := fi_line_idx
       }}
       meta.map { case m => {
         m.io.idx := fi_line_idx
@@ -520,17 +511,17 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
         }
       }
       is (fi_req_w1) {
-        when (out.req.fire()) {
+        when (out.req.fire) {
           fi_state := fi_req_w2
         }
       }
       is (fi_req_w2) {
-        when (out.req.fire()) {
+        when (out.req.fire) {
           fi_state := fi_wait_w
         }
       }
       is (fi_wait_w) {
-        when (out.resp.fire()) {
+        when (out.resp.fire) {
           fi_counter := fi_counter_next
           when (fi_counter_next === 0.U) {
             fi_state := fi_complete
@@ -540,7 +531,7 @@ class Cache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with SramPar
         }
       }
       is (fi_complete) {
-        dcache_fi_complete := true.B
+        io.dcacheFi := true.B
         fi_state := fi_idle
         for (i <- 0 until 4) {
           meta(i).io.invalidate := true.B

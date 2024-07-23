@@ -24,12 +24,12 @@ class Fence extends Module {
   val io = IO(new Bundle {
     val uop = Input(new MicroOp)
     val ecp = Output(new ExCommitPacket)
+    val fenceI = Output(Bool())
   })
 
   val uop = io.uop
 
-  val fence_i = uop.valid && (uop.fu_code === s"b$FU_SYS".U) && (uop.sys_code === s"b$SYS_FENCEI".U)
-  BoringUtils.addSource(fence_i, "fence_i")
+  io.fenceI := uop.valid && (uop.fu_code === s"b$FU_SYS".U) && (uop.sys_code === s"b$SYS_FENCEI".U)
 
   /* when fence.i is commited
    *  1. mark it as a system jump

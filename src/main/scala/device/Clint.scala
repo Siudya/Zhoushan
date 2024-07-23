@@ -22,6 +22,7 @@ import chisel3.util.experimental._
 class Clint extends Module {
   val io = IO(new Bundle {
     val in = Flipped(new CacheBusIO)
+    val mtip = Output(Bool())
   })
 
   val mtime = RegInit(UInt(64.W), 0.U)
@@ -53,7 +54,7 @@ class Clint extends Module {
   val wmask = MaskExpand(io.in.req.bits.wmask)
   val wen = io.in.req.bits.wen
 
-  RegMap.access(clint_map, addr, rdata, wdata, wmask, wen && io.in.req.fire())
+  RegMap.access(clint_map, addr, rdata, wdata, wmask, wen && io.in.req.fire)
 
   val reg_rdata = RegInit(UInt(64.W), 0.U)
   val reg_id = RegInit(UInt(io.in.req.bits.id.getWidth.W), 0.U)
@@ -64,7 +65,7 @@ class Clint extends Module {
 
   switch (state) {
     is (s_idle) {
-      when (io.in.req.fire()) {
+      when (io.in.req.fire) {
         when (wen) {
           reg_id := io.in.req.bits.id
         } .otherwise {
@@ -75,7 +76,7 @@ class Clint extends Module {
       }
     }
     is (s_wait) {
-      when (io.in.resp.fire()) {
+      when (io.in.resp.fire) {
         state := s_idle
       }
     }
@@ -86,14 +87,12 @@ class Clint extends Module {
   io.in.resp.bits.rdata := reg_rdata
   io.in.resp.bits.id := reg_id
 
-  val mtip = WireInit(UInt(1.W), 0.U)
-  mtip := (mtime >= mtimecmp).asUInt()
-  BoringUtils.addSource(mtip, "csr_mip_mtip")
+  io.mtip := (mtime >= mtimecmp).asUInt
 
   // debug info
   if (ZhoushanConfig.DebugClint) {
     when (mtime =/= RegNext(mtime)) {
-      printf("%d: [CLINT] mtime=%d mtimecmp=%d mtip=%x\n", DebugTimer(), mtime, mtimecmp, mtip)
+      printf("%d: [CLINT] mtime=%d mtimecmp=%d mtip=%x\n", DebugTimer(), mtime, mtimecmp, io.mtip)
     }
   }
 

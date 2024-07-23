@@ -32,7 +32,7 @@ class StallRegister extends Module with ZhoushanConfig {
   val reg_in = RegInit(VecInit(Seq.fill(DecodeWidth)(0.U.asTypeOf(new MicroOp))))
   val reg_in_valid = RegInit(false.B)
 
-  when (io.flush || io.out.fire()) {
+  when (io.flush || io.out.fire) {
     reg_in_valid := false.B
   } .elsewhen (io.in.valid && !io.flush && !io.out.ready && RegNext(io.out.ready)) {
     reg_in := in

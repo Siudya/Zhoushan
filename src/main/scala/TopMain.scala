@@ -15,24 +15,28 @@
 
 package zhoushan
 
+import chisel3.stage.ChiselGeneratorAnnotation
+import circt.stage.FirtoolOption
+
 object TopMain extends App {
 
   if (ZhoushanConfig.EnableDifftest) {
-    (new chisel3.stage.ChiselStage).execute(args, Seq(
+    (new circt.stage.ChiselStage).execute(args, Seq(
       chisel3.stage.ChiselGeneratorAnnotation(() => new SimTop())
     ))
   } else {
-    if (ZhoushanConfig.TargetOscpuSoc) {
-      (new chisel3.stage.ChiselStage).execute(args, Seq(
-        chisel3.stage.ChiselGeneratorAnnotation(() => new RealTop()),
-        firrtl.stage.RunFirrtlTransformAnnotation(new AddModulePrefix()),
-        ModulePrefixAnnotation(s"ysyx_${ZhoushanConfig.OscpuId}_")
-      ))
-    } else {
-      (new chisel3.stage.ChiselStage).execute(args, Seq(
-        chisel3.stage.ChiselGeneratorAnnotation(() => new RealTop())
-      ))
-    }
+    (new circt.stage.ChiselStage).execute(args, Seq(
+      FirtoolOption("-O=release"),
+      FirtoolOption("--disable-all-randomization"),
+      FirtoolOption("--disable-annotation-unknown"),
+      FirtoolOption("--strip-debug-info"),
+      FirtoolOption("--lower-memories"),
+      FirtoolOption("--add-vivado-ram-address-conflict-synthesis-bug-workaround"),
+      FirtoolOption("--lowering-options=noAlwaysComb," +
+        " disallowPortDeclSharing, disallowLocalVariables," +
+        " emittedLineLength=120, explicitBitcast, locationInfoStyle=plain," +
+        " disallowExpressionInliningInPorts, disallowMuxInlining"),
+      ChiselGeneratorAnnotation(() => new RealTop())
+    ))
   }
-
 }

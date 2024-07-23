@@ -85,6 +85,7 @@ class Core extends Module with ZhoushanConfig {
   val rf = Module(new Prf)
   rf.io.in := isu.io.out
   rf.io.flush := flush
+  rf.io.debug_arat := rename.io.debug_arat
 
   /* ----- Stage 6 - Execution (EX) -------------- */
 
@@ -93,6 +94,7 @@ class Core extends Module with ZhoushanConfig {
   execution.io.flush := flush
   execution.io.rs1_data := rf.io.rs1_data
   execution.io.rs2_data := rf.io.rs2_data
+  execution.io.rob <> rob.io.csr
 
   for (i <- 0 until IssueWidth) {
     if (i < IssueWidth - 1) {
@@ -128,9 +130,15 @@ class Core extends Module with ZhoushanConfig {
   dcache.io.in <> crossbar1to2.io.out(0)
   dcache.io.out_cache <> io.core_bus(DataCacheId - 1)
   dcache.io.out_uncache <> io.core_bus(DataUncacheId - 1)
+  dcache.io.fenceI := execution.io.fenceI
+  dcache.io.sqEmpty := sq.io.sqEmpty
+  icache.io.dcacheFi := dcache.io.dcacheFi
+  icache.io.fenceI := execution.io.fenceI
+  icache.io.sqEmpty := sq.io.sqEmpty
 
   val clint = Module(new Clint)
   clint.io.in <> crossbar1to2.io.out(1)
+  rob.io.mtip := clint.io.mtip
 
   /* ----- Stage 7 - Commit (CM) ----------------- */
 
@@ -142,21 +150,7 @@ class Core extends Module with ZhoushanConfig {
   val cm_rd_data = rob.io.cm_rd_data
   val cm_mmio = rob.io.cm_mmio
 
-  /* ----- CSR & Difftest ------------------------ */
-
-  val cycle_cnt = RegInit(0.U(64.W))
-  val instr_cnt = RegInit(0.U(64.W))
-
-  BoringUtils.addSource(cycle_cnt, "csr_mcycle")
-  BoringUtils.addSource(instr_cnt, "csr_minstret")
-
-  cycle_cnt := cycle_cnt + 1.U
-  instr_cnt := instr_cnt + PopCount(cm.map(_.valid))
-
   if (EnableDifftest) {
-    val rf_a0 = WireInit(0.U(64.W))
-    BoringUtils.addSink(rf_a0, "rf_a0")
-
     for (i <- 0 until CommitWidth) {
       val skip = (cm(i).inst === Instructions.PUTCH) ||
                  (cm(i).fu_code === s"b${Constant.FU_SYS}".U && cm(i).inst(31, 20) === Csrs.mcycle) ||
@@ -177,7 +171,7 @@ class Core extends Module with ZhoushanConfig {
       dt_ic.io.wdest    := RegNext(cm(i).rd_addr)
 
       when (dt_ic.io.valid && dt_ic.io.instr === Instructions.PUTCH) {
-        printf("%c", rf_a0(7, 0))
+        printf("%c", rf.io.a0(7, 0))
       }
 
       if (DebugCommit) {
@@ -203,25 +197,15 @@ class Core extends Module with ZhoushanConfig {
     dt_te.io.clock    := clock
     dt_te.io.coreid   := 0.U
     dt_te.io.valid    := RegNext(trap.orR)
-    dt_te.io.code     := RegNext(rf_a0(2, 0))
+    dt_te.io.code     := RegNext(rf.io.a0(2, 0))
     dt_te.io.pc       := 0.U
     for (i <- 0 until CommitWidth) {
       when (trap_idx === i.U) {
         dt_te.io.pc   := RegNext(cm(i).pc)
       }
     }
-    dt_te.io.cycleCnt := cycle_cnt
-    dt_te.io.instrCnt := instr_cnt
-
-    if (EnableMisRateCounter) {
-      val profile_jmp_counter = WireInit(UInt(64.W), 0.U)
-      val profile_mis_counter = WireInit(UInt(64.W), 0.U)
-      BoringUtils.addSink(profile_jmp_counter, "profile_jmp_counter")
-      BoringUtils.addSink(profile_mis_counter, "profile_mis_counter")
-      when (dt_te.io.valid) {
-        printf("Jump: %d, Mis: %d\n", profile_jmp_counter, profile_mis_counter)
-      }
-    }
+    dt_te.io.cycleCnt := rob.io.csr.mcycle
+    dt_te.io.instrCnt := rob.io.csr.minstret
 
     val dt_cs = Module(new DifftestCSRState)
     dt_cs.io.clock          := clock
@@ -245,23 +229,4 @@ class Core extends Module with ZhoushanConfig {
     dt_cs.io.mideleg        := 0.U
     dt_cs.io.medeleg        := 0.U
   }
-
-  if (EnableQueueAnalyzer) {
-    val profile_queue_ib_count     = WireInit(UInt(8.W), 0.U)
-    val profile_queue_iq_int_count = WireInit(UInt(8.W), 0.U)
-    val profile_queue_iq_mem_count = WireInit(UInt(8.W), 0.U)
-    val profile_queue_rob_count    = WireInit(UInt(8.W), 0.U)
-    val profile_queue_sq_count     = WireInit(UInt(8.W), 0.U)
-
-    BoringUtils.addSink(profile_queue_ib_count,     "profile_queue_ib_count")
-    BoringUtils.addSink(profile_queue_iq_int_count, "profile_queue_iq_int_count")
-    BoringUtils.addSink(profile_queue_iq_mem_count, "profile_queue_iq_mem_count")
-    BoringUtils.addSink(profile_queue_rob_count,    "profile_queue_rob_count")
-    BoringUtils.addSink(profile_queue_sq_count,     "profile_queue_sq_count")
-
-    printf("%d: [QUEUE] ib=%d iq_int=%d iq_mem=%d rob=%d sq=%d\n", DebugTimer(),
-           profile_queue_ib_count, profile_queue_iq_int_count, profile_queue_iq_mem_count,
-           profile_queue_rob_count, profile_queue_sq_count)
-  }
-
 }

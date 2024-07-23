@@ -50,7 +50,7 @@ class Uncache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with Zhous
 
   switch (state) {
     is (s_idle) {
-      when (in.req.fire()) {
+      when (in.req.fire) {
         addr  := in.req.bits.addr
         wdata := in.req.bits.wdata
         wmask := in.req.bits.wmask
@@ -73,23 +73,23 @@ class Uncache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with Zhous
       }
     }
     is (s_req_1) {
-      when (out.req.fire()) {
+      when (out.req.fire) {
         state := s_wait_1
       }
     }
     is (s_wait_1) {
-      when (out.resp.fire()) {
+      when (out.resp.fire) {
         rdata_1 := out.resp.bits.rdata(31, 0)
         state := Mux(req_split, s_req_2, s_complete)
       }
     }
     is (s_req_2) {
-      when (out.req.fire()) {
+      when (out.req.fire) {
         state := s_wait_2
       }
     }
     is (s_wait_2) {
-      when (out.resp.fire()) {
+      when (out.resp.fire) {
         if (TargetOscpuSoc) {
           rdata_2 := out.resp.bits.rdata(31, 0)
         } else {
@@ -99,7 +99,7 @@ class Uncache[BT <: CacheBusIO](bus_type: BT, id: Int) extends Module with Zhous
       }
     }
     is (s_complete) {
-      when (in.resp.fire()) {
+      when (in.resp.fire) {
         state := s_idle
         if (DebugUncache) {
           printf("%d: [UN $ ] [RESP] addr=%x rdata=%x id=%x\n", DebugTimer(),

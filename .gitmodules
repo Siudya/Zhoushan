@@ -4,3 +4,11 @@
 [submodule "DRAMsim3"]
 	path = DRAMsim3
 	url = https://github.com/OpenXiangShan/DRAMsim3.git
+[submodule "xs-utils"]
+	path = xs-utils
+	url = https://github.com/Siudya/xs-utils
+	branch = main
+[submodule "rocket-chip"]
+	path = rocket-chip
+	url = https://github.com/Siudya/rocket-chip
+	branch = master

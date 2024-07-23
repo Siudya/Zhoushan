@@ -63,7 +63,7 @@ class Lsu extends Module {
   val mmio = (addr(31) === 0.U)
 
   val mask = ("b11111111".U << addr_offset)(7, 0)
-  val wmask = MuxLookup(uop.mem_size, 0.U, Array(
+  val wmask = MuxLookup(uop.mem_size, 0.U)(Seq(
     s"b$MEM_BYTE".U  -> "b00000001".U(8.W),
     s"b$MEM_HALF".U  -> "b00000011".U(8.W),
     s"b$MEM_WORD".U  -> "b00001111".U(8.W),
@@ -75,9 +75,9 @@ class Lsu extends Module {
   //    word  -> offset = 101/110/111
   //    dword -> offset != 000
   val addr_unaligned = Mux(uop.fu_code === s"b$FU_MEM".U,
-    MuxLookup(uop.mem_size, false.B, Array(
+    MuxLookup(uop.mem_size, false.B)(Seq(
       s"b$MEM_HALF".U  -> (addr_offset === "b111".U),
-      s"b$MEM_WORD".U  -> (addr_offset.asUInt() > "b100".U),
+      s"b$MEM_WORD".U  -> (addr_offset.asUInt > "b100".U),
       s"b$MEM_DWORD".U -> (addr_offset =/= "b000".U)
     )), false.B)
   // currently we just skip the memory access with unaligned address
@@ -112,10 +112,10 @@ class Lsu extends Module {
 
   switch (state) {
     is (s_idle) {
-      when (ld_req.fire()) {
+      when (ld_req.fire) {
         state := s_wait_r
         store_valid := false.B
-      } .elsewhen (st_req.fire()) {
+      } .elsewhen (st_req.fire) {
         state := s_wait_w
         store_valid := true.B
       }
@@ -124,7 +124,7 @@ class Lsu extends Module {
       }
     }
     is (s_wait_r) {
-      when (ld_resp.fire()) {
+      when (ld_resp.fire) {
         load_data := ld_resp.bits.rdata >> (addr_offset << 3)
         if (ZhoushanConfig.DebugLsu) {
           printf("%d: [LOAD ] pc=%x addr=%x rdata=%x -> %x\n", DebugTimer(),
@@ -136,7 +136,7 @@ class Lsu extends Module {
       }
     }
     is (s_wait_w) {
-      when (st_resp.fire()) {
+      when (st_resp.fire) {
         if (ZhoushanConfig.DebugLsu) {
           printf("%d: [STORE] pc=%x addr=%x wdata=%x -> %x wmask=%x\n", DebugTimer(),
                  uop.pc, addr, in2, st_req.bits.wdata, st_req.bits.wmask)
@@ -157,21 +157,21 @@ class Lsu extends Module {
   val ldu_out = Wire(UInt(64.W))
   val load_out = Wire(UInt(64.W))
 
-  ld_out := Mux(uop.mem_code === s"b$MEM_LD".U, MuxLookup(uop.mem_size, 0.U, Array(
+  ld_out := Mux(uop.mem_code === s"b$MEM_LD".U, MuxLookup(uop.mem_size, 0.U)(Seq(
     s"b$MEM_BYTE".U  -> Cat(Fill(56, load_data(7)), load_data(7, 0)),
     s"b$MEM_HALF".U  -> Cat(Fill(48, load_data(15)), load_data(15, 0)),
     s"b$MEM_WORD".U  -> Cat(Fill(32, load_data(31)), load_data(31, 0)),
     s"b$MEM_DWORD".U -> load_data
   )), 0.U)
 
-  ldu_out := Mux(uop.mem_code === s"b$MEM_LDU".U, MuxLookup(uop.mem_size, 0.U, Array(
+  ldu_out := Mux(uop.mem_code === s"b$MEM_LDU".U, MuxLookup(uop.mem_size, 0.U)(Seq(
     s"b$MEM_BYTE".U  -> Cat(Fill(56, 0.U), load_data(7, 0)),
     s"b$MEM_HALF".U  -> Cat(Fill(48, 0.U), load_data(15, 0)),
     s"b$MEM_WORD".U  -> Cat(Fill(32, 0.U), load_data(31, 0)),
     s"b$MEM_DWORD".U -> load_data
   )), 0.U)
 
-  load_out := MuxLookup(uop.mem_code, 0.U, Array(
+  load_out := MuxLookup(uop.mem_code, 0.U)(Seq(
     s"b$MEM_LD".U  -> ld_out,
     s"b$MEM_LDU".U -> ldu_out
   ))
@@ -180,6 +180,6 @@ class Lsu extends Module {
   io.ecp.store_valid := store_valid
   io.ecp.mmio := mmio
   io.ecp.rd_data := load_out
-  io.busy := ld_req.valid || st_req.valid || (state === s_wait_r && !ld_resp.fire()) || (state === s_wait_w && !st_resp.fire())
+  io.busy := ld_req.valid || st_req.valid || (state === s_wait_r && !ld_resp.fire) || (state === s_wait_w && !st_resp.fire)
 
 }

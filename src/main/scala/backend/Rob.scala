@@ -30,7 +30,7 @@ class Rob extends Module with ZhoushanConfig {
   val idx_width = log2Up(entries)
   val addr_width = idx_width + 1  // MSB is flag bit
   def getIdx(x: UInt): UInt = x(idx_width - 1, 0)
-  def getFlag(x: UInt): Bool = x(addr_width - 1).asBool()
+  def getFlag(x: UInt): Bool = x(addr_width - 1).asBool
 
   val io = IO(new Bundle {
     // input
@@ -49,6 +49,8 @@ class Rob extends Module with ZhoushanConfig {
     val flush = Input(Bool())
     // sys instruction ready to issue signal
     val sys_ready = Output(Bool())
+    val csr = Flipped(new RobCsrIo)
+    val mtip = Input(Bool())
   })
 
   val cm = Wire(Vec(deq_width, new MicroOp))
@@ -68,7 +70,7 @@ class Rob extends Module with ZhoushanConfig {
   val count = Mux(enq_flag === deq_flag, enq_ptr - deq_ptr, entries.U + enq_ptr - deq_ptr)
   val rob_empty = (enq_flag === deq_flag) && (enq_ptr === deq_ptr)
 
-  val num_enq = Mux(io.in.fire(), PopCount(io.in.bits.vec.map(_.valid)), 0.U)
+  val num_enq = Mux(io.in.fire, PopCount(io.in.bits.vec.map(_.valid)), 0.U)
   val num_deq = PopCount(cm.map(_.valid))
 
   // even though deq_width = 2, we may deq only 1 instruction each time
@@ -103,7 +105,7 @@ class Rob extends Module with ZhoushanConfig {
 
     val enq_idx = getIdx(enq_vec(offset(i)))
 
-    when (io.in.bits.vec(i).valid && io.in.fire() && !io.flush) {
+    when (io.in.bits.vec(i).valid && io.in.fire && !io.flush) {
       rob.write(enq_idx, enq)          // write to rob
       complete(enq_idx) := false.B     // mark as not completed
       ecp(enq_idx) := 0.U.asTypeOf(new ExCommitPacket)
@@ -115,7 +117,7 @@ class Rob extends Module with ZhoushanConfig {
 
   val next_enq_vec = VecInit(enq_vec.map(_ + num_enq))
 
-  when (io.in.fire() && !io.flush) {
+  when (io.in.fire && !io.flush) {
     enq_vec := next_enq_vec
   }
 
@@ -172,36 +174,16 @@ class Rob extends Module with ZhoushanConfig {
   val deq_idx_async = Wire(Vec(deq_width, UInt(idx_width.W)))
   val deq_ecp = Wire(Vec(deq_width, new ExCommitPacket))
 
-  // CSR registers from/to CSR unit
-  val csr_mstatus       = WireInit(UInt(64.W), "h00001800".U)
-  val csr_mie_mtie      = WireInit(Bool(), false.B)
-  val csr_mtvec_idx     = WireInit(UInt(30.W), 0.U)
-  val csr_mip_mtip_intr = WireInit(Bool(), false.B)
-
-  BoringUtils.addSink(csr_mstatus, "csr_mstatus")
-  BoringUtils.addSink(csr_mie_mtie, "csr_mie_mtie")
-  BoringUtils.addSink(csr_mtvec_idx, "csr_mtvec_idx")
-  BoringUtils.addSink(csr_mip_mtip_intr, "csr_mip_mtip_intr")
-
-  val intr         = WireInit(Bool(), false.B)
-  val intr_mstatus = WireInit(UInt(64.W), "h00001800".U)
-  val intr_mepc    = WireInit(UInt(64.W), 0.U)
-  val intr_mcause  = WireInit(UInt(64.W), 0.U)
-
-  BoringUtils.addSource(intr, "intr")
-  BoringUtils.addSource(intr_mstatus, "intr_mstatus")
-  BoringUtils.addSource(intr_mepc, "intr_mepc")
-  BoringUtils.addSource(intr_mcause, "intr_mcause")
-
   // interrupt
   val s_intr_idle :: s_intr_wait :: Nil = Enum(2)
   val intr_state = RegInit(s_intr_idle)
 
   val intr_jmp_pc = WireInit(UInt(32.W), 0.U)
 
-  val intr_global_en = (csr_mstatus(3) === 1.U)
-  val intr_clint_en = csr_mie_mtie
+  val intr_global_en = (io.csr.mstatus(3) === 1.U)
+  val intr_clint_en = io.csr.mtie
 
+  io.csr.intr := 0.U.asTypeOf(io.csr.intr)
   switch (intr_state) {
     is (s_intr_idle) {
       when (intr_global_en && intr_clint_en) {
@@ -210,12 +192,12 @@ class Rob extends Module with ZhoushanConfig {
     }
     is (s_intr_wait) {
       when (intr_global_en && intr_clint_en) {
-        when (cm(0).valid && csr_mip_mtip_intr && !sys_in_flight) {
-          intr_mstatus := Cat(csr_mstatus(63, 8), csr_mstatus(3), csr_mstatus(6, 4), 0.U, csr_mstatus(2, 0))
-          intr_mepc := cm(0).pc
-          intr_mcause := "h8000000000000007".U
-          intr := true.B
-          intr_jmp_pc := Cat(csr_mtvec_idx, Fill(2, 0.U))
+        when (cm(0).valid && io.mtip && !sys_in_flight) {
+          io.csr.intr.bits.mstatus := Cat(io.csr.mstatus(63, 8), io.csr.mstatus(3), io.csr.mstatus(6, 4), 0.U, io.csr.mstatus(2, 0))
+          io.csr.intr.bits.mepc := cm(0).pc
+          io.csr.intr.bits.mcause := "h8000000000000007".U
+          io.csr.intr.valid := true.B
+          intr_jmp_pc := Cat(io.csr.mtvecIdx, Fill(2, 0.U))
           intr_state := s_intr_idle
         }
       } .otherwise {
@@ -229,9 +211,9 @@ class Rob extends Module with ZhoushanConfig {
     val dt_ae = Module(new DifftestArchEvent)
     dt_ae.io.clock        := clock
     dt_ae.io.coreid       := 0.U
-    dt_ae.io.intrNO       := RegNext(Mux(intr, intr_mcause, 0.U))
+    dt_ae.io.intrNO       := RegNext(Mux(io.csr.intr.valid, io.csr.intr.bits.mcause, 0.U))
     dt_ae.io.cause        := 0.U
-    dt_ae.io.exceptionPC  := RegNext(Mux(intr, intr_mepc, 0.U))
+    dt_ae.io.exceptionPC  := RegNext(Mux(io.csr.intr.valid, io.csr.intr.bits.mepc, 0.U))
     if (DebugArchEvent) {
       when (dt_ae.io.intrNO =/= 0.U) {
         printf("%d: [DT-AE] intrNO=%x ePC=%x\n", DebugTimer(), dt_ae.io.intrNO, dt_ae.io.exceptionPC)
@@ -311,7 +293,7 @@ class Rob extends Module with ZhoushanConfig {
         }
       }
       when (deq_uop(i).jmp_code === s"b$JMP_JALR".U) {
-        ras_type := MuxLookup(Cat(rd_link.asUInt(), rs1_link.asUInt()), RAS_X, Array(
+        ras_type := MuxLookup(Cat(rd_link.asUInt, rs1_link.asUInt), RAS_X)(Seq(
           "b00".U -> RAS_X,
           "b01".U -> RAS_POP,
           "b10".U -> RAS_PUSH,
@@ -323,9 +305,9 @@ class Rob extends Module with ZhoushanConfig {
   }
 
   // update jmp_packet for interrupt
-  when (intr) {
+  when (io.csr.intr.valid) {
     io.jmp_packet.valid   := true.B
-    io.jmp_packet.inst_pc := intr_mepc(31, 0)
+    io.jmp_packet.inst_pc := io.csr.intr.bits.mepc(31, 0)
     io.jmp_packet.jmp     := true.B
     io.jmp_packet.jmp_pc  := intr_jmp_pc
     io.jmp_packet.mis     := true.B
@@ -354,7 +336,7 @@ class Rob extends Module with ZhoushanConfig {
 
   /* --------------- reset --------------- */
 
-  when (reset.asBool()) {
+  when (reset.asBool) {
     for (i <- 0 until entries) {
       rob.write(i.U, 0.U.asTypeOf(new MicroOp))
     }
@@ -364,30 +346,18 @@ class Rob extends Module with ZhoushanConfig {
 
   io.cm := cm
   for (i <- 0 until deq_width) {
-    io.cm(i).valid := cm(i).valid && !intr
+    io.cm(i).valid := cm(i).valid && !io.csr.intr.valid
   }
   io.cm_rd_data := cm_rd_data
   io.cm_mmio := cm_mmio
-  io.sq_deq_req := sq_deq_req && !intr
+  io.sq_deq_req := sq_deq_req && !io.csr.intr.valid
 
-  /* --------------- debug --------------- */
+  val cycle_cnt = RegInit(0.U(64.W))
+  val instr_cnt = RegInit(0.U(64.W))
 
-  if (EnableDifftest && EnableMisRateCounter) {
-    val jmp_counter = RegInit(UInt(64.W), 0.U)
-    val mis_counter = RegInit(UInt(64.W), 0.U)
-    when (io.jmp_packet.valid) {
-      jmp_counter := jmp_counter + 1.U
-      when (io.jmp_packet.mis) {
-        mis_counter := mis_counter + 1.U
-      }
-    }
-    BoringUtils.addSource(jmp_counter, "profile_jmp_counter")
-    BoringUtils.addSource(mis_counter, "profile_mis_counter")
-  }
+  io.csr.mcycle := cycle_cnt
+  io.csr.minstret := instr_cnt
 
-  if (EnableDifftest && EnableQueueAnalyzer) {
-    val queue_rob_count = count
-    BoringUtils.addSource(queue_rob_count, "profile_queue_rob_count")
-  }
-
+  cycle_cnt := cycle_cnt + 1.U
+  instr_cnt := instr_cnt + PopCount(cm.map(_.valid))
 }

@@ -55,7 +55,7 @@ class PatternHistoryTableLocal extends AbstractPatternHistoryTable {
     io.rdirect(i) := false.B
     for (j <- 0 until PhtWidth) {
       when (RegNext(io.rindex(i)) === j.U) {
-        io.rdirect(i) := pht_rdata_1(j).asBool()
+        io.rdirect(i) := pht_rdata_1(j).asBool
       }
     }
   }
@@ -78,7 +78,7 @@ class PatternHistoryTableLocal extends AbstractPatternHistoryTable {
       }
     }
   }
-  pht_wdata_w := MuxLookup(pht_wdata_r, 0.U, Array(
+  pht_wdata_w := MuxLookup(pht_wdata_r, 0.U)(Seq(
     0.U -> Mux(RegNext(io.wjmp), 1.U, 0.U),   // strongly not taken
     1.U -> Mux(RegNext(io.wjmp), 2.U, 0.U),   // weakly not taken
     2.U -> Mux(RegNext(io.wjmp), 3.U, 1.U),   // weakly taken
@@ -94,7 +94,7 @@ class PatternHistoryTableLocal extends AbstractPatternHistoryTable {
   }
 
   // sync reset
-  when (reset.asBool()) {
+  when (reset.asBool) {
     for (i <- 0 until PhtWidth) {
       for (j <- 0 until PhtSize) {
         pht_1(i).write(j.U, 0.U)
@@ -118,7 +118,7 @@ class PatternHistoryTableGlobal extends AbstractPatternHistoryTable {
     pht_rdata_1 := pht_1.read(io.raddr(i))
 
     // stage 2
-    io.rdirect(i) := pht_rdata_1(1).asBool()
+    io.rdirect(i) := pht_rdata_1(1).asBool
   }
 
   // write to pht
@@ -133,7 +133,7 @@ class PatternHistoryTableGlobal extends AbstractPatternHistoryTable {
   when (RegNext(io.wen)) {
     pht_wdata_r := pht_wdata
   }
-  pht_wdata_w := MuxLookup(pht_wdata_r, 0.U, Array(
+  pht_wdata_w := MuxLookup(pht_wdata_r, 0.U)(Seq(
     0.U -> Mux(RegNext(io.wjmp), 1.U, 0.U),   // strongly not taken
     1.U -> Mux(RegNext(io.wjmp), 2.U, 0.U),   // weakly not taken
     2.U -> Mux(RegNext(io.wjmp), 3.U, 1.U),   // weakly taken
@@ -145,7 +145,7 @@ class PatternHistoryTableGlobal extends AbstractPatternHistoryTable {
   }
 
   // sync reset
-  when (reset.asBool()) {
+  when (reset.asBool) {
     for (i <- 0 until PhtSize) {
       pht_1.write(i.U, 0.U)
       pht_0.write(i.U, 0.U)

@@ -38,6 +38,7 @@ class Rename extends Module with ZhoushanConfig {
     // from commit stage
     val cm_recover = Input(Bool())
     val cm = Vec(CommitWidth, Input(new MicroOp))
+    val debug_arat = Output(Vec(32, UInt(log2Up(PrfSize).W)))
   })
 
   val en = io.out.ready && io.in.valid
@@ -64,6 +65,7 @@ class Rename extends Module with ZhoushanConfig {
   val rt = Module(new RenameTable)
   rt.io.en := en
   rt.io.in := in_uop
+  io.debug_arat := rt.io.debug_arat
   for (i <- 0 until DecodeWidth) {
     uop(i).rs1_paddr  := rt.io.rs1_paddr(i)
     uop(i).rs2_paddr  := rt.io.rs2_paddr(i)
@@ -127,6 +129,7 @@ class RenameTable extends Module with ZhoushanConfig {
     val cm_recover = Input(Bool())
     val cm_rd_addr = Vec(CommitWidth, Input(UInt(5.W)))
     val cm_rd_paddr = Vec(CommitWidth, Input(UInt(log2Up(PrfSize).W)))
+    val debug_arat = Output(Vec(32, UInt(log2Up(PrfSize).W)))
   })
 
   val spec_table = RegInit(VecInit(Seq.tabulate(32)(i => i.U(log2Up(PrfSize).W))))
@@ -167,7 +170,7 @@ class RenameTable extends Module with ZhoushanConfig {
     }
   }
 
-  BoringUtils.addSource(arch_table, "arch_rename_table")
+  io.debug_arat := arch_table
 
   if (DebugRenameVerbose) {
     for (i <- 0 until 32 / 8) {

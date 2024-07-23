@@ -1,37 +1,129 @@
 // import mill dependency
 import mill._
-import mill.scalalib._
-import mill.scalalib.TestModule.Utest
-// support BSP
-import mill.bsp._
-// maven repository
-import coursier.maven.MavenRepository
+import scalalib._
+import scalafmt._
+import $file.`rocket-chip`.common
+import $file.`rocket-chip`.hardfloat.common
+import $file.`rocket-chip`.cde.common
 
-object ivys {
-  val sv = "2.12.13"
-  val chisel3 = ivy"edu.berkeley.cs::chisel3:3.5.0-RC1"
-  val chisel3Plugin = ivy"edu.berkeley.cs:::chisel3-plugin:3.5.0-RC1"
-  val chiseltest = ivy"edu.berkeley.cs::chiseltest:0.3.3"
-  val scalatest = ivy"org.scalatest::scalatest:3.2.2"
-  val macroParadise = ivy"org.scalamacros:::paradise:2.1.1"
+val defaultVersions = Map(
+  "chisel" -> "6.5.0",
+  "chisel-plugin" -> "6.5.0",
+  "chiseltest" -> "5.0.0",
+  "scala" -> "2.13.12",
+  "scalatest" -> "3.2.7"
+)
+
+def getVersion(dep: String, org: String = "org.chipsalliance", cross: Boolean = false) = {
+  val version = sys.env.getOrElse(dep + "Version", defaultVersions(dep))
+  if (cross)
+    ivy"$org:::$dep:$version"
+  else
+    ivy"$org::$dep:$version"
 }
 
 trait CommonModule extends ScalaModule {
-  override def scalaVersion = ivys.sv
-  override def scalacOptions = Seq("-Xsource:2.11")
-  override def compileIvyDeps = Agg(ivys.macroParadise)
-  override def scalacPluginIvyDeps = Agg(ivys.macroParadise, ivys.chisel3Plugin)
+  override def scalaVersion = defaultVersions("scala")
+
+  override def scalacPluginIvyDeps = Agg(getVersion("chisel-plugin", cross = true))
+
+  override def scalacOptions = super.scalacOptions() ++ Agg("-Ymacro-annotations", "-Ytasty-reader")
+
+}
+
+object rocketchip extends RocketChip
+
+trait RocketChip
+  extends millbuild.`rocket-chip`.common.RocketChipModule
+    with SbtModule {
+  def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+  override def millSourcePath = os.pwd / "rocket-chip"
+
+  def chiselModule = None
+
+  def chiselPluginJar = None
+
+  def chiselIvy = Some(getVersion("chisel"))
+
+  def chiselPluginIvy = Some(getVersion("chisel-plugin", cross = true))
+
+  def macrosModule = macros
+
+  def hardfloatModule = hardfloat
+
+  def cdeModule = cde
+
+  def mainargsIvy = ivy"com.lihaoyi::mainargs:0.5.0"
+
+  def json4sJacksonIvy = ivy"org.json4s::json4s-jackson:4.0.5"
+
+  object macros extends Macros
+
+  trait Macros
+    extends millbuild.`rocket-chip`.common.MacrosModule
+      with SbtModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    def scalaReflectIvy = ivy"org.scala-lang:scala-reflect:${defaultVersions("scala")}"
+  }
+
+  object hardfloat extends Hardfloat
+
+  trait Hardfloat
+    extends millbuild.`rocket-chip`.hardfloat.common.HardfloatModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    override def millSourcePath = os.pwd / "rocket-chip" / "hardfloat" / "hardfloat"
+
+    def chiselModule = None
+
+    def chiselPluginJar = None
+
+    def chiselIvy = Some(getVersion("chisel"))
+
+    def chiselPluginIvy = Some(getVersion("chisel-plugin", cross = true))
+  }
+
+  object cde extends CDE
+
+  trait CDE
+    extends millbuild.`rocket-chip`.cde.common.CDEModule
+      with ScalaModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    override def millSourcePath = os.pwd / "rocket-chip" / "cde" / "cde"
+  }
+}
+
+
+object xsutils extends SbtModule with ScalafmtModule with CommonModule {
+
+  override def millSourcePath = os.pwd / "xs-utils"
+
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
+
+  override def ivyDeps = super.ivyDeps() ++ Agg(
+    getVersion("chisel"),
+    getVersion("chiseltest", "edu.berkeley.cs"),
+  )
 }
 
 object difftest extends SbtModule with CommonModule {
   override def millSourcePath = os.pwd / "difftest"
-  override def ivyDeps = super.ivyDeps() ++ Agg(ivys.chisel3)
+  override def ivyDeps = Agg(getVersion("chisel"))
 }
 
 object Zhoushan extends SbtModule with CommonModule {
   override def millSourcePath = os.pwd
-  override def ivyDeps = super.ivyDeps() ++ Agg(ivys.chisel3)
-  override def moduleDeps = super.moduleDeps ++ Seq(
-    difftest
+
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip, difftest, xsutils)
+
+  override def ivyDeps = super.ivyDeps() ++ Agg(
+    getVersion("chisel"),
+    getVersion("chiseltest", "edu.berkeley.cs"),
   )
 }

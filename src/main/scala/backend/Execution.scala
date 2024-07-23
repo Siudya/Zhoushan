@@ -40,6 +40,8 @@ class Execution extends Module with ZhoushanConfig {
     val dmem_ld = new CacheBusIO
     // lsu early wakeup uop output
     val lsu_wakeup_uop = Output(new MicroOp)
+    val rob = new RobCsrIo
+    val fenceI = Output(Bool())
   })
 
   val uop = io.in
@@ -57,13 +59,13 @@ class Execution extends Module with ZhoushanConfig {
   val in2 = Wire(Vec(IssueWidth, UInt(64.W)))
 
   for (i <- 0 until IssueWidth) {
-    in1_0(i) := MuxLookup(uop(i).rs1_src, 0.U, Array(
+    in1_0(i) := MuxLookup(uop(i).rs1_src, 0.U)(Seq(
       s"b$RS_FROM_RF".U  -> io.rs1_data(i),
       s"b$RS_FROM_IMM".U -> SignExt32_64(uop(i).imm),
       s"b$RS_FROM_PC".U  -> ZeroExt32_64(uop(i).pc)
     ))(63, 0)
 
-    in2_0(i) := MuxLookup(uop(i).rs2_src, 0.U, Array(
+    in2_0(i) := MuxLookup(uop(i).rs2_src, 0.U)(Seq(
       s"b$RS_FROM_RF".U  -> io.rs2_data(i),
       s"b$RS_FROM_IMM".U -> SignExt32_64(uop(i).imm),
       s"b$RS_FROM_PC".U  -> ZeroExt32_64(uop(i).pc)
@@ -81,6 +83,8 @@ class Execution extends Module with ZhoushanConfig {
   pipe0.io.uop := uop(0)
   pipe0.io.in1 := in1(0)
   pipe0.io.in2 := in2(0)
+  pipe0.io.rob <> io.rob
+  io.fenceI := pipe0.io.fenceI
 
   val pipe1 = Module(new ExPipe1)
   pipe1.io.uop := uop(1)
@@ -160,6 +164,8 @@ class ExPipe0 extends Module {
     val in2 = Input(UInt(64.W))
     // output
     val ecp = Output(new ExCommitPacket)
+    val rob = new RobCsrIo
+    val fenceI = Output(Bool())
   })
 
   val alu = Module(new Alu)
@@ -168,8 +174,10 @@ class ExPipe0 extends Module {
 
   val csr = Module(new Csr)
   csr.io.in1 := io.in1
+  csr.io.rob <> io.rob
 
   val fence = Module(new Fence)
+  io.fenceI := fence.io.fenceI
 
   // default input and output
   alu.io.uop := 0.U.asTypeOf(new MicroOp)

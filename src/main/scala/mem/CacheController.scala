@@ -23,6 +23,9 @@ class CacheController[BT <: CacheBusIO](bus_type: BT, id_cache: Int, id_uncache:
     val in = Flipped(bus_type)
     val out_cache = new CoreBusIO
     val out_uncache = new CoreBusIO
+    val fenceI = Input(Bool())
+    val sqEmpty = Input(Bool())
+    val dcacheFi = if(id_cache == InstCacheId) Input(Bool()) else Output(Bool())
   })
 
   val to_uncache = (io.in.req.bits.addr(31) === 0.U)
@@ -34,6 +37,9 @@ class CacheController[BT <: CacheBusIO](bus_type: BT, id_cache: Int, id_uncache:
   crossbar1to2.io.in <> io.in
   crossbar1to2.io.out(0) <> cache.io.in
   crossbar1to2.io.out(1) <> uncache.io.in
+  cache.io.fenceI := io.fenceI
+  cache.io.sqEmpty := io.sqEmpty
+  if(id_cache == InstCacheId) cache.io.dcacheFi := io.dcacheFi else io.dcacheFi := cache.io.dcacheFi
 
   io.out_cache <> cache.io.out
   io.out_uncache <> uncache.io.out

@@ -30,6 +30,8 @@ class Prf extends Module with ZhoushanConfig {
     val rd_paddr = Vec(IssueWidth, Input(UInt(log2Up(PrfSize).W)))
     val rd_data = Vec(IssueWidth, Input(UInt(64.W)))
     val flush = Input(Bool())
+    val a0 = Output(Bool())
+    val debug_arat = Input(Vec(32, UInt(log2Up(PrfSize).W)))
   })
 
   val prf = Mem(PrfSize, UInt(64.W))
@@ -64,7 +66,7 @@ class Prf extends Module with ZhoushanConfig {
     }
   }
 
-  when (reset.asBool()) {
+  when (reset.asBool) {
     for (i <- 0 until PrfSize) {
       prf(i) := 0.U
     }
@@ -94,21 +96,15 @@ class Prf extends Module with ZhoushanConfig {
   io.out := out_uop
   io.rs1_data := out_rs1_data
   io.rs2_data := out_rs2_data
-
-  val arch_rename_table = WireInit(VecInit(Seq.fill(32)(0.U(log2Up(PrfSize).W))))
-  BoringUtils.addSink(arch_rename_table, "arch_rename_table")
+  io.a0 := 0.U
 
   if (EnableDifftest) {
-    val rf_a0 = WireInit(0.U(64.W))
-    BoringUtils.addSource(rf_a0, "rf_a0")
-
     val dt_ar = Module(new DifftestArchIntRegState)
     dt_ar.io.clock  := clock
     dt_ar.io.coreid := 0.U
     for (i <- 0 until 32) {
-      dt_ar.io.gpr(i) := prf(arch_rename_table(i))
+      dt_ar.io.gpr(i) := prf(io.debug_arat(i))
     }
-    rf_a0 := dt_ar.io.gpr(10)
+    io.a0 := dt_ar.io.gpr(10)
   }
-
 }

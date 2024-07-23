@@ -101,12 +101,12 @@ class CacheBusCrossbar1to2[BT <: CacheBusIO](bus_type: BT) extends Module {
 
   val in_flight_req = RegInit(VecInit(Seq.fill(2)(0.U(8.W))))
   for (i <- 0 until 2) {
-    when (io.out(i).req.fire() && !io.out(i).resp.fire()) {
+    when (io.out(i).req.fire && !io.out(i).resp.fire) {
       in_flight_req(i) := in_flight_req(i) + 1.U
       if (ZhoushanConfig.DebugCrossbar1to2) {
         printf("%d: [CB1-2] in_flight_req(%d)=%d -> %d\n", DebugTimer(), i.U, in_flight_req(i), in_flight_req(i) + 1.U)
       }
-    } .elsewhen (io.out(i).resp.fire() && !io.out(i).req.fire()) {
+    } .elsewhen (io.out(i).resp.fire && !io.out(i).req.fire) {
       in_flight_req(i) := in_flight_req(i) - 1.U
       if (ZhoushanConfig.DebugCrossbar1to2) {
         printf("%d: [CB1-2] in_flight_req(%d)=%d -> %d\n", DebugTimer(), i.U, in_flight_req(i), in_flight_req(i) - 1.U)
@@ -119,7 +119,7 @@ class CacheBusCrossbar1to2[BT <: CacheBusIO](bus_type: BT) extends Module {
 
   val channel = RegInit(0.U(1.W))
   for (i <- 0 until 2) {
-    when (io.out(i).req.fire()) {
+    when (io.out(i).req.fire) {
       channel := i.U
     }
   }
@@ -150,21 +150,21 @@ class CacheBusCrossbar1to2[BT <: CacheBusIO](bus_type: BT) extends Module {
 
   if (ZhoushanConfig.DebugCrossbar1to2) {
     val in = io.in
-    when (in.req.fire()) {
+    when (in.req.fire) {
       printf("%d: [CB1-2] [IN ] [REQ ] addr=%x size=%x id=%x wen=%x wdata=%x wmask=%x\n", DebugTimer(),
              in.req.bits.addr, in.req.bits.size, in.req.bits.id, in.req.bits.wen, in.req.bits.wdata, in.req.bits.wmask)
     }
-    when (in.resp.fire()) {
+    when (in.resp.fire) {
       printf("%d: [CB1-2] [IN ] [RESP] rdata=%x id=%x\n", DebugTimer(),
              in.resp.bits.rdata, in.resp.bits.id)
     }
     for (i <- 0 until 2) {
       val out = io.out(i)
-      when (out.req.fire()) {
+      when (out.req.fire) {
         printf("%d: [CB1-2] [O-%d] [REQ ] addr=%x size=%x id=%x wen=%x wdata=%x wmask=%x\n", DebugTimer(), i.U,
                out.req.bits.addr, out.req.bits.size, out.req.bits.id, out.req.bits.wen, out.req.bits.wdata, out.req.bits.wmask)
       }
-      when (out.resp.fire()) {
+      when (out.resp.fire) {
         printf("%d: [CB1-2] [O-%d] [RESP] rdata=%x id=%x\n", DebugTimer(), i.U,
                   out.resp.bits.rdata, out.resp.bits.id)
       }
