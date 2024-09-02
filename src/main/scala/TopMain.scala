@@ -17,6 +17,7 @@ package zhoushan
 
 import chisel3.stage.ChiselGeneratorAnnotation
 import circt.stage.FirtoolOption
+import xs.utils.FileRegisters
 
 object TopMain extends App {
 
@@ -38,5 +39,7 @@ object TopMain extends App {
         " disallowExpressionInliningInPorts, disallowMuxInlining"),
       ChiselGeneratorAnnotation(() => new RealTop())
     ))
+    xs.utils.dft.FileManager.writeOut("RealTop")
+    FileRegisters.write("build", "RealTop.")
   }
 }

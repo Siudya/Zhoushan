@@ -17,20 +17,26 @@ package zhoushan
 
 import chisel3._
 import chisel3.util._
+import xs.utils.dft.{HasIjtag, SimpleDftCore, SimpleDftParams}
 
-class RealTop extends Module {
+class RealTop extends RawModule with HasIjtag with SimpleDftCore {
+  val mName = "RealTop"
+  val dftParams = SimpleDftParams()
   val io = IO(new Bundle {
     val interrupt = Input(Bool())
     val master = new OscpuSocAxiIO
     val slave = Flipped(new OscpuSocAxiIO)
   })
 
-  val core = Module(new Core)
+  private val (core, crossbar, core2axi) = withClockAndReset(masterClock, masterReset) {
+    (
+      Module(new Core),
+      Module(new CoreBusCrossbarNto1(4)),
+      Module(new CoreBus2Axi(new OscpuSocAxiIO))
+    )
+  }
 
-  val crossbar = Module(new CoreBusCrossbarNto1(4))
   crossbar.io.in <> core.io.core_bus
-
-  val core2axi = Module(new CoreBus2Axi(new OscpuSocAxiIO))
   core2axi.in <> crossbar.io.out
   core2axi.out <> io.master
 
@@ -47,4 +53,7 @@ class RealTop extends Module {
   slave.r.bits.last := false.B
   slave.r.bits.id   := 0.U
 
+  if(dftInit) {
+    println("DFT components are inserted")
+  }
 }
